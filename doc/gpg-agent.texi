@@ -43,7 +43,15 @@
 .IR file ]
 .RI [ options ]
 .B  \-\-daemon
-.RI [ command_line ]
+.br
+.B  gpg-agent
+.RB [ \-\-homedir
+.IR dir ]
+.RB [ \-\-options
+.IR file ]
+.RI [ options ]
+.B  \-\-agent-fd
+.IR fd
 @end ifset
 
 @mansect description
@@ -186,6 +194,11 @@ Yet another way is creating
 a new process as a child of gpg-agent: @code{gpg-agent --daemon
 /bin/sh}.  This way you get a new shell with the environment setup
 properly; if you exit from this shell, gpg-agent terminates as well.
+
+@item --agent-fd @var{fd}
+@opindex  agent-fd
+Start the gpg-agent using @var{fd} as the listening socket. This is useful for
+socket activation a la systemd and launchd.
 @end table
 
 @mansect options
@@ -531,6 +544,12 @@ information.
 Ignore requests to change the current @code{tty} or X window system's
 @code{DISPLAY} variable respectively.  This is useful to lock the
 pinentry to pop up at the @code{tty} or display you started the agent.
+
+@item --ssh-agent-fd @var{fd}
+@opindex ssh-agent-fd
+
+When starting the agent with @option{--agent-fd}, use this to pass in a socket
+to be used for the OpenSSH agent protocol.
 
 @anchor{option --enable-ssh-support}
 @item --enable-ssh-support

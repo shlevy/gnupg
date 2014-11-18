@@ -124,7 +124,9 @@ enum cmd_and_opt_values
   oPuttySupport,
   oDisableScdaemon,
   oDisableCheckOwnSocket,
-  oWriteEnvFile
+  oWriteEnvFile,
+  oAgentFD,
+  oSSHAgentFD
 };
 
 
@@ -138,6 +140,8 @@ static ARGPARSE_OPTS opts[] = {
   { 301, NULL, 0, N_("@Options:\n ") },
 
   { oDaemon,   "daemon",     0, N_("run in daemon mode (background)") },
+  { oAgentFD,   "agent-fd",  1, "@" },
+  { oSSHAgentFD,   "ssh-agent-fd",  1, "@" },
   { oServer,   "server",     0, N_("run in server mode (foreground)") },
   { oVerbose, "verbose",     0, N_("verbose") },
   { oQuiet,	"quiet",     0, N_("be somewhat more quiet") },
@@ -596,6 +600,31 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
   return 1; /* handled */
 }
 
+/* Handle agent socket(s) */
+static void
+handle_agent_socks(int fd, int fd_ssh)
+{
+#ifndef HAVE_W32_SYSTEM
+  if (chdir("/"))
+    {
+      log_error ("chdir to / failed: %s\n", strerror (errno));
+      exit (1);
+    }
+
+  {
+    struct sigaction sa;
+
+    sa.sa_handler = SIG_IGN;
+    sigemptyset (&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction (SIGPIPE, &sa, NULL);
+  }
+#endif /*!HAVE_W32_SYSTEM*/
+
+  log_info ("%s %s started\n", strusage(11), strusage(13) );
+  handle_connections (fd, fd_ssh);
+  assuan_sock_close (fd);
+}
 
 /* The main entry point.  */
 int
@@ -612,6 +641,8 @@ main (int argc, char **argv )
   int default_config =1;
   int pipe_server = 0;
   int is_daemon = 0;
+  int fd_agent = GNUPG_INVALID_FD;
+  int fd_ssh_agent = GNUPG_INVALID_FD;
   int nodetach = 0;
   int csh_style = 0;
   char *logfile = NULL;
@@ -819,6 +850,8 @@ main (int argc, char **argv )
         case oSh: csh_style = 0; break;
         case oServer: pipe_server = 1; break;
         case oDaemon: is_daemon = 1; break;
+        case oAgentFD: fd_agent = pargs.r.ret_int; break;
+        case oSSHAgentFD: fd_ssh_agent = pargs.r.ret_int; break;
 
         case oDisplay: default_display = xstrdup (pargs.r.ret_str); break;
         case oTTYname: default_ttyname = xstrdup (pargs.r.ret_str); break;
@@ -904,7 +937,8 @@ main (int argc, char **argv )
     bind_textdomain_codeset (PACKAGE_GT, "UTF-8");
 #endif
 
-  if (!pipe_server && !is_daemon && !gpgconf_list)
+  if (!pipe_server && !is_daemon && !gpgconf_list &&
+                                                  fd_agent == GNUPG_INVALID_FD)
     {
      /* We have been called without any options and thus we merely
         check whether an agent is already running.  We do this right
@@ -1053,6 +1087,10 @@ main (int argc, char **argv )
       start_command_handler (ctrl, GNUPG_INVALID_FD, GNUPG_INVALID_FD);
       agent_deinit_default_ctrl (ctrl);
       xfree (ctrl);
+    }
+  else if (fd_agent != GNUPG_INVALID_FD)
+    {
+      handle_agent_socks(fd_agent, fd_ssh_agent);
     }
   else if (!is_daemon)
     ; /* NOTREACHED */
@@ -1238,26 +1276,8 @@ main (int argc, char **argv )
           log_set_prefix (NULL, oldflags | JNLIB_LOG_RUN_DETACHED);
           opt.running_detached = 1;
         }
-
-      if (chdir("/"))
-        {
-          log_error ("chdir to / failed: %s\n", strerror (errno));
-          exit (1);
-        }
-
-      {
-        struct sigaction sa;
-
-        sa.sa_handler = SIG_IGN;
-        sigemptyset (&sa.sa_mask);
-        sa.sa_flags = 0;
-        sigaction (SIGPIPE, &sa, NULL);
-      }
 #endif /*!HAVE_W32_SYSTEM*/
-
-      log_info ("%s %s started\n", strusage(11), strusage(13) );
-      handle_connections (fd, opt.ssh_support ? fd_ssh : GNUPG_INVALID_FD);
-      assuan_sock_close (fd);
+      handle_agent_socks(fd, opt.ssh_support ? fd_ssh : GNUPG_INVALID_FD);
     }
 
   return 0;
